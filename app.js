@@ -60,7 +60,7 @@ async function vDetail(id){
  ${sec('Details',`<dl>${rows([['Style',L.style[c.style]],['Outcome',L.outcome[c.outcome]],['Length',c.length&&c.length+' m'],['Pitches',c.npitch||(P.length||'')],['Time',[c.start,c.finish].filter(Boolean).join(' – ')],['Partners',(c.partners||[]).join(', ')]])}</dl>`)}
  ${P.length?`<h2>Pitches</h2><div class=topo>${[...P].map((p,i)=>[p,i]).reverse().map(([p,i])=>`<div class=tp><div class=row><b class=mono>P${i+1}</b>${pill(p.grade)}<span class="mu mono">${p.length?p.length+' m':''}</span><span class=mu>${esc(p.leader)}</span></div>${p.note?`<p>${esc(p.note)}</p>`:''}</div>`).join('')}</div>`:''}
  ${sec('Conditions',`<dl>${rows([['Weather',c.weather],['Temp',c.temp&&c.temp+'°C'],['Rock',c.rock],['Crowds',L.crowds[c.crowds-1]]])}</dl>${tx(c.approach&&'Approach: '+c.approach)}${tx(c.descent&&'Descent: '+c.descent)}`)}
- ${sec('Gear',`<dl>${rows([['Rack',c.rack],['Ropes',c.ropes],['Fixed gear',c.fixed&&c.fixed+' / 5']])}</dl>${tx(c.issues&&'Issues: '+c.issues)}${tx(c.next&&'Bring next time: '+c.next)}`)}
+ ${sec('Gear',`<dl>${rows([['Trad gear',{yes:'Yes',no:'No'}[c.trad]],['Gear used',c.rack],['Ropes',c.ropes],['Fixed gear',c.fixed&&c.fixed+' / 5']])}</dl>${tx(c.issues&&'Issues: '+c.issues)}${tx(c.next&&'Bring next time: '+c.next)}`)}
  ${sec('Journal',tx(c.journal))}`;
  if(ask){$('#bk').onclick=async()=>{await doBackup();$('.notice').remove()};$('#lt').onclick=()=>$('.notice').remove()}
  $('#dl').onclick=async()=>{if(confirm('Delete this climb? This can’t be undone.')){await del(c.id);location.hash='#/'}};
@@ -77,7 +77,7 @@ async function vForm(id){
  ${D('Basics',I('name','Route name *')+I('crag','Crag / area','list=crags')+I('country','Country')+I('date','Date *','type=date')+`<div class=g2>${I('grade','Grade','list=grades')}${I('length','Length (m)','type=number inputmode=numeric')}</div>${I('npitch','Number of pitches','type=number inputmode=numeric')}<label class=f>Style</label>${chips('style',objO(L.style),c.style)}<label class=f style="margin-top:14px">Outcome</label>${chips('outcome',objO(L.outcome),c.outcome)}<label class=f style="margin-top:14px">Rating</label>${chips('rating',[1,2,3,4,5].map(i=>[i,i]),c.rating)}<div class=g2 style="margin-top:14px">${I('start','Start','type=time')}${I('finish','Finish','type=time')}</div>`,1)}
  ${D('Partners',`<div class=tags id=tags></div><input id=pi list=ppl placeholder="Add partner, press enter">`)}
  ${D('Conditions',`<label class=f>Weather</label>${chips('weather',arrO(L.weather),c.weather)}${I('temp','Temperature (°C)','type=number inputmode=decimal').replace('<label','<label style="margin-top:14px"')}<label class=f>Rock</label>${chips('rock',arrO(L.rock),c.rock)}<label class=f style="margin-top:14px">Crowds</label>${chips('crowds',L.crowds.map((l,i)=>[i+1,l]),c.crowds)}<div style="margin-top:14px">${T('approach','Approach')}${T('descent','Descent')}</div>`)}
- ${D('Gear',I('rack','Rack used')+I('ropes','Rope(s)')+T('issues','Equipment issues (worn fixed gear, bad bolts…)')+T('next','Gear to bring next time')+`<label class=f>Fixed protection quality</label>${chips('fixed',[1,2,3,4,5].map(i=>[i,i]),c.fixed)}`)}
+ ${D('Gear',`<label class=f>Did it need trad gear?</label>${chips('trad',[['yes','Yes, trad'],['no','No, bolted']],c.trad||(c.rack?'yes':''))}<div id=rk style="margin-top:14px">${I('rack','Gear I used (cams, nuts, slings…)')}</div>`+I('ropes','Rope(s)')+T('issues','Equipment issues (worn fixed gear, bad bolts…)')+T('next','Gear to bring next time')+`<label class=f>Fixed protection quality</label>${chips('fixed',[1,2,3,4,5].map(i=>[i,i]),c.fixed)}`)}
  ${D('Pitch by pitch',`<div id=pl>${(c.pitches||[]).map(pr).join('')}</div><button type=button class=btn id=ap>${ic('plus')}Add pitch</button>`)}
  ${D('Journal',T('journal','The story, lessons learned').replace('<textarea','<textarea style="min-height:200px"'))}
  ${D('Photos',`<label class=btn for=pf style="cursor:pointer">${ic('cam')}Add photos</label><input id=pf type=file accept="image/*" multiple hidden><div class=thumbs id=th></div>`)}
@@ -92,13 +92,14 @@ async function vForm(id){
  $('#ap').onclick=()=>{$('#pl').insertAdjacentHTML('beforeend',pr());numP()};
  const numP=()=>$$('.prow b').forEach((b,i)=>b.textContent='P'+(i+1));numP();
  $('#pl').onclick=e=>{const b=e.target.closest('.x');if(b){b.parentNode.remove();numP()}};
+ const tg=()=>$('#rk').style.display=$('[name=trad]:checked')?.value=='yes'?'':'none';tg();$('#f').addEventListener('change',tg);
  const lastR={};$$('input[type=radio]:checked').forEach(i=>lastR[i.name]=i);
- $('#f').addEventListener('click',e=>{const i=e.target;if(i.type=='radio'){if(lastR[i.name]===i){i.checked=false;lastR[i.name]=null}else lastR[i.name]=i}});
+ $('#f').addEventListener('click',e=>{const i=e.target;if(i.type=='radio'){if(lastR[i.name]===i){i.checked=false;lastR[i.name]=null}else lastR[i.name]=i;tg()}});
  $('#f').onsubmit=async e=>{e.preventDefault();addP();const fd=new FormData(e.target),n={id:c.id||crypto.randomUUID(),created:c.created||Date.now()};
   const nm=$('[name=name]'),dt=$('[name=date]');[nm,dt].forEach(x=>x.classList.toggle('bad',!x.value.trim()));
   if(!nm.value.trim()||!dt.value){$('details').open=true;toast('Route name and date are needed');return}
-  'name crag country date grade length npitch style outcome rating start finish weather temp rock crowds approach descent rack ropes issues next fixed journal'.split(' ').forEach(k=>n[k]=(fd.get(k)||'').trim());
-  n.partners=partners;n.photos=photos;n.pitches=$$('.prow').map(r=>({grade:$('.pg',r).value.trim(),length:$('.pl',r).value,leader:$('.pw',r).value.trim(),note:$('.pn',r).value.trim()})).filter(p=>p.grade||p.length||p.leader||p.note);
+  'name crag country date grade length npitch style outcome rating start finish weather temp rock crowds approach descent trad rack ropes issues next fixed journal'.split(' ').forEach(k=>n[k]=(fd.get(k)||'').trim());
+  if(n.trad!='yes')n.rack='';n.partners=partners;n.photos=photos;n.pitches=$$('.prow').map(r=>({grade:$('.pg',r).value.trim(),length:$('.pl',r).value,leader:$('.pw',r).value.trim(),note:$('.pn',r).value.trim()})).filter(p=>p.grade||p.length||p.leader||p.note);
   await put(n);askBk=true;toast('Saved');location.hash='#/c/'+n.id};
 }
 /* backup */
