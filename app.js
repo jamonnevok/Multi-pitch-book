@@ -21,6 +21,13 @@ const chips=(n,opts,v)=>`<div class=chips>${opts.map(([k,l])=>`<label class=chip
 const objO=o=>Object.entries(o),arrO=a=>a.map(x=>[x,x]);
 const setTheme=t=>{t?document.documentElement.dataset.theme=t:delete document.documentElement.dataset.theme};setTheme(localStorage.theme);
 async function shrink(f){const b=await createImageBitmap(f),k=Math.min(1,1400/Math.max(b.width,b.height)),c=document.createElement('canvas');c.width=b.width*k;c.height=b.height*k;c.getContext('2d').drawImage(b,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.72)}
+const b64=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(b)});
+const GH=async(m,p,body,raw)=>{const g=await getM('gh');if(!g)throw 'cfg';const r=await fetch(`https://api.github.com/repos/${g.repo}/contents/${p}`,{method:m,headers:{Authorization:'Bearer '+g.token,Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json'},body:body&&JSON.stringify(body)});if(r.status==404)return null;if(!r.ok)throw r.status;return raw?r.text():r.json()};
+const FN='pitchbook-backup.json';let askBk=false;
+async function doBackup(){
+ const cs=await all(),b=new Blob([JSON.stringify({app:'pitchbook',v:1,exported:new Date().toISOString(),climbs:cs})],{type:'application/json'}),g=await getM('gh');
+ if(g&&navigator.onLine){try{const ls=await GH('GET',''),cur=Array.isArray(ls)&&ls.find(x=>x.name==FN);await GH('PUT',FN,{message:'Backup '+new Date().toISOString().slice(0,10),content:await b64(b),...(cur?{sha:cur.sha}:{})});await setM('lastExport',Date.now());toast('Backed up to GitHub');return}catch(e){toast('GitHub failed ('+e+'). Downloading instead.')}}
+ const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`pitchbook-${new Date().toISOString().slice(0,10)}.json`;a.click();await setM('lastExport',Date.now());toast('Backup downloaded')}
 /* list */
 let F={q:'',crag:'',g1:'',g2:'',p:'',d1:'',d2:'',r:'',s:''},fo=false;
 const gOpts=`<option value="">Any</option>`+G.map(g=>`<option>${g}</option>`).join('');
@@ -29,7 +36,7 @@ async function vList(){
  const u=k=>[...new Set(cs.flatMap(c=>k=='p'?c.partners||[]:[c.crag]).filter(Boolean))].sort(),sel=(k,id,o)=>`<label class=f>${k}<select name=${id}><option value="">Any</option>${o.map(x=>`<option ${F[id]==x?'selected':''}>${esc(x)}</option>`).join('')}</select></label>`;
  const last=await getM('lastExport'),days=last?(Date.now()-last)/864e5:null;
  $('#v').innerHTML=`<div class="row sp"><h1>Climbs</h1><div class=row><button class="btn i" id=th aria-label="Toggle theme">${ic('theme')}</button><button class="btn i" id=ft aria-label=Filters>${ic('filter')}</button></div></div>
- ${cs.length&&(days===null||days>30)?`<a class=notice href="#/data" style="display:block">${days===null?'You haven’t exported a backup yet.':'Last backup was '+Math.floor(days)+' days ago.'} Tap to export.</a>`:''}
+ ${cs.length&&(days===null||days>30)?`<div class=notice>${days===null?'You haven’t exported a backup yet.':'Last backup was '+Math.floor(days)+' days ago.'} <div><button class="btn p" id=bk2 style="margin-top:10px">Back up now</button></div></div>`:''}
  <input type=search name=q placeholder="Search routes, crags, partners" value="${esc(F.q)}">
  <div class="fl ${fo?'on':''}" id=fl><div class=g2>${sel('Crag','crag',u('c'))}${sel('Partner','p',u('p'))}<label class=f>Grade from<select name=g1>${gOpts}</select></label><label class=f>Grade to<select name=g2>${gOpts}</select></label><label class=f>From<input type=date name=d1 value="${F.d1}"></label><label class=f>To<input type=date name=d2 value="${F.d2}"></label><label class=f>Min rating<select name=r><option value="">Any</option>${[1,2,3,4,5].map(i=>`<option ${F.r==i?'selected':''}>${i}</option>`).join('')}</select></label><label class=f>Style<select name=s><option value="">Any</option>${objO(L.style).map(([k,l])=>`<option value=${k} ${F.s==k?'selected':''}>${l}</option>`).join('')}</select></label></div><button class=btn id=clr>Clear filters</button></div>
  <div id=res style="margin-top:16px"></div>`;
@@ -38,6 +45,7 @@ async function vList(){
  const draw=()=>{const r=cs.filter(ok);$('#res').innerHTML=r.length?r.map(c=>`<a class=card href="#/c/${c.id}">${c.photos?.[0]?`<img src="${c.photos[0]}" alt="" loading=lazy>`:`<div class=ph>${MT}</div>`}<div class=cb><h3>${esc(c.name)}</h3><div class=meta>${pill(c.grade)}${c.crag?`<span>${esc(c.crag)}</span>`:''}<span>${fmtD(c.date)}</span>${stars(+c.rating)}</div></div></a>`).join(''):`<div class=empty>${cs.length?'Nothing matches. Even the guidebook shrugs.':'No routes yet. The rock isn’t going anywhere.'}</div>`};draw();
  $('#v').oninput=e=>{if(e.target.name in F){F[e.target.name]=e.target.value;draw()}};
  $('#ft').onclick=()=>$('#fl').classList.toggle('on',fo=!fo);
+ $('#bk2')&&($('#bk2').onclick=async()=>{await doBackup();vList()});
  $('#clr').onclick=()=>{Object.keys(F).forEach(k=>F[k]='');vList()};
  $('#th').onclick=()=>{const d=matchMedia('(prefers-color-scheme:dark)').matches,cur=localStorage.theme||(d?'dark':'light'),n=cur=='dark'?'light':'dark';localStorage.theme=n;setTheme(n)};
 }
@@ -46,7 +54,7 @@ async function vDetail(id){
  const c=await get(id);if(!c){location.hash='#/';return}
  const rows=a=>a.filter(x=>x[1]).map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join(''),sec=(t,h)=>h?`<h2>${t}</h2>${h}`:'',tx=t=>t?`<p style="white-space:pre-wrap;margin:0 0 8px">${esc(t)}</p>`:'';
  const P=c.pitches||[];
- $('#v').innerHTML=`<div class="row sp" style="margin-bottom:12px"><a class="btn i" href="#/" aria-label=Back>${ic('back')}</a><div class=row><a class="btn i" href="#/edit/${c.id}" aria-label=Edit>${ic('edit')}</a><button class="btn i d" id=dl aria-label=Delete>${ic('trash')}</button></div></div>
+ const ask=askBk;askBk=false;$('#v').innerHTML=`${ask?'<div class=notice>Saved. Back up now?<div class=row style="margin-top:10px"><button class="btn p" id=bk>Back up</button><button class=btn id=lt>Later</button></div></div>':''}<div class="row sp" style="margin-bottom:12px"><a class="btn i" href="#/" aria-label=Back>${ic('back')}</a><div class=row><a class="btn i" href="#/edit/${c.id}" aria-label=Edit>${ic('edit')}</a><button class="btn i d" id=dl aria-label=Delete>${ic('trash')}</button></div></div>
  ${c.photos?.length?`<div class=hero>${c.photos.map(p=>`<img src="${p}" alt="">`).join('')}</div>`:''}
  <h1 style="margin-bottom:8px">${esc(c.name)}</h1><div class=meta style="font-size:15px">${pill(c.grade)}${stars(+c.rating)}<span>${[c.crag,c.country].filter(Boolean).map(esc).join(', ')}</span><span>${fmtD(c.date)}</span></div>
  ${sec('Details',`<dl>${rows([['Style',L.style[c.style]],['Outcome',L.outcome[c.outcome]],['Length',c.length&&c.length+' m'],['Pitches',c.npitch||(P.length||'')],['Time',[c.start,c.finish].filter(Boolean).join(' – ')],['Partners',(c.partners||[]).join(', ')]])}</dl>`)}
@@ -54,6 +62,7 @@ async function vDetail(id){
  ${sec('Conditions',`<dl>${rows([['Weather',c.weather],['Temp',c.temp&&c.temp+'°C'],['Rock',c.rock],['Crowds',L.crowds[c.crowds-1]]])}</dl>${tx(c.approach&&'Approach: '+c.approach)}${tx(c.descent&&'Descent: '+c.descent)}`)}
  ${sec('Gear',`<dl>${rows([['Rack',c.rack],['Ropes',c.ropes],['Fixed gear',c.fixed&&c.fixed+' / 5']])}</dl>${tx(c.issues&&'Issues: '+c.issues)}${tx(c.next&&'Bring next time: '+c.next)}`)}
  ${sec('Journal',tx(c.journal))}`;
+ if(ask){$('#bk').onclick=async()=>{await doBackup();$('.notice').remove()};$('#lt').onclick=()=>$('.notice').remove()}
  $('#dl').onclick=async()=>{if(confirm('Delete this climb? This can’t be undone.')){await del(c.id);location.hash='#/'}};
 }
 /* form */
@@ -90,18 +99,25 @@ async function vForm(id){
   if(!nm.value.trim()||!dt.value){$('details').open=true;toast('Route name and date are needed');return}
   'name crag country date grade length npitch style outcome rating start finish weather temp rock crowds approach descent rack ropes issues next fixed journal'.split(' ').forEach(k=>n[k]=(fd.get(k)||'').trim());
   n.partners=partners;n.photos=photos;n.pitches=$$('.prow').map(r=>({grade:$('.pg',r).value.trim(),length:$('.pl',r).value,leader:$('.pw',r).value.trim(),note:$('.pn',r).value.trim()})).filter(p=>p.grade||p.length||p.leader||p.note);
-  await put(n);toast('Saved');location.hash='#/c/'+n.id};
+  await put(n);askBk=true;toast('Saved');location.hash='#/c/'+n.id};
 }
 /* backup */
+async function restore(d,rep){if(d.app!=='pitchbook'||!Array.isArray(d.climbs))throw 0;if(rep&&!confirm('Replace all current climbs with this backup?'))return;await tx('c','readwrite',s=>{rep&&s.clear();d.climbs.forEach(c=>c.id&&s.put(c))});toast(`Restored ${d.climbs.length} climbs`);vData()}
 async function vData(){
- const cs=await all(),last=await getM('lastExport'),ph=cs.reduce((a,c)=>a+(c.photos?.length||0),0);
- $('#v').innerHTML=`<h1>Backup</h1><p class=mu>${cs.length} climbs, ${ph} photos stored on this device only. ${last?'Last export: '+new Date(last).toLocaleDateString()+'.':'Never exported.'}</p>
- <h2>Export</h2><button class="btn p" id=ex style="width:100%">${ic('data')}Export backup</button>
- <h2>Import</h2><div class=chips style="margin-bottom:12px"><label class=chip><input type=radio name=mode value=merge checked><span>Merge</span></label><label class=chip><input type=radio name=mode value=replace><span>Replace all</span></label></div>
- <label class=btn for=im style="width:100%;cursor:pointer">Import backup</label><input id=im type=file accept=".json,application/json" hidden>
- <p class=mu style="font-size:14px;margin-top:16px">Merge keeps your current climbs and adds or updates those in the file. Replace erases everything first.</p>`;
- $('#ex').onclick=async()=>{const b=new Blob([JSON.stringify({app:'pitchbook',v:1,exported:new Date().toISOString(),climbs:cs})],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`pitchbook-${new Date().toISOString().slice(0,10)}.json`;a.click();await setM('lastExport',Date.now());toast('Backup exported');setTimeout(vData,300)};
- $('#im').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(d.app!=='pitchbook'||!Array.isArray(d.climbs))throw 0;const rep=$('[name=mode]:checked').value=='replace';if(rep&&!confirm('Replace all current climbs with this backup?'))return;await tx('c','readwrite',s=>{rep&&s.clear();d.climbs.forEach(c=>c.id&&s.put(c))});toast(`Imported ${d.climbs.length} climbs`);vData()}catch{toast('That isn’t a valid backup file')}};
+ const cs=await all(),last=await getM('lastExport'),g=await getM('gh'),ph=cs.reduce((a,c)=>a+(c.photos?.length||0),0);
+ $('#v').innerHTML=`<h1>Backup</h1><p class=mu>${cs.length} climbs, ${ph} photos on this device. ${last?'Last backup: '+new Date(last).toLocaleDateString()+'.':'Never backed up.'}</p>
+ <button class="btn p" id=ex style="width:100%">${ic('data')}Back up now</button><p class=mu style="font-size:14px">${g?'Saves to GitHub ('+esc(g.repo)+').':'Downloads a file. Set up GitHub below to store it online.'}</p>
+ <h2>GitHub backup</h2><label class=f>Private repo (owner/name)<input id=gr placeholder="jamonnevok/pitchbook-data" value="${esc(g?.repo)}"></label><label class=f>Fine-grained token<input id=gt type=password placeholder="${g?'Saved. Paste to replace':'github_pat_…'}"></label>
+ <div class=row><button class=btn id=gs>Save</button>${g?'<button class="btn d" id=gx>Remove</button>':''}</div>
+ <h2>Restore</h2><div class=chips style="margin-bottom:12px"><label class=chip><input type=radio name=mode value=merge checked><span>Merge</span></label><label class=chip><input type=radio name=mode value=replace><span>Replace all</span></label></div>
+ ${g?'<button class=btn id=rg style="width:100%;margin-bottom:10px">Restore from GitHub</button>':''}<label class=btn for=im style="width:100%;cursor:pointer">Import from file</label><input id=im type=file accept=".json,application/json" hidden>
+ <p class=mu style="font-size:14px;margin-top:16px">Merge adds or updates climbs from the backup. Replace erases everything first.</p>`;
+ const rep=()=>$('[name=mode]:checked').value=='replace';
+ $('#ex').onclick=async()=>{await doBackup();vData()};
+ $('#gs').onclick=async()=>{const r=$('#gr').value.trim(),t=$('#gt').value.trim()||g?.token;if(!/^[\w.-]+\/[\w.-]+$/.test(r)||!t){toast('Enter owner/name and a token');return}await setM('gh',{repo:r,token:t});toast('Saved');vData()};
+ $('#gx')&&($('#gx').onclick=async()=>{await tx('m','readwrite',s=>s.delete('gh'));vData()});
+ $('#rg')&&($('#rg').onclick=async()=>{try{const t=await GH('GET',FN,null,true);if(!t){toast('No backup found in that repo');return}await restore(JSON.parse(t),rep())}catch{toast('Couldn’t restore from GitHub')}});
+ $('#im').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{await restore(JSON.parse(await f.text()),rep())}catch{toast('That isn’t a valid backup file')}};
 }
 /* router */
 function route(){const h=location.hash.slice(2).split('/');$$('nav a').forEach(a=>a.classList.toggle('on',a.dataset.n==(h[0]=='data'?'data':'list')));$('#fab').style.display=h[0]=='new'||h[0]=='edit'?'none':'';scrollTo(0,0);
